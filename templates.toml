@@ -1,0 +1,487 @@
+# Project choices and file templates.
+#
+# [choices.<language>] declares the supported project options. Values are
+# comma-separated IDs; a single choice is selected automatically.
+# [templates.<language>] contains language files. Shared and option-specific
+# tables are merged by projman.scaffold, with later files replacing earlier ones.
+# Template bodies use literal strings so source code is copied verbatim.
+
+# ---------------------------------------------------------------------------
+# Project choices
+# ---------------------------------------------------------------------------
+
+[choices.c]
+"vcs" = "none,git"
+"build" = "cmake,make"
+"generator" = "ninja,makefiles"
+"package" = "none,vcpkg"
+
+[choices.cpp]
+"vcs" = "none,git"
+"build" = "cmake,make"
+"generator" = "ninja,makefiles"
+"package" = "none,vcpkg"
+
+[choices.rust]
+"vcs" = "none,git"
+"build" = "native"
+"package" = "builtin"
+
+[choices.zig]
+"vcs" = "none,git"
+"build" = "native"
+"package" = "none"
+
+[choices.odin]
+"vcs" = "none,git"
+"build" = "native"
+"package" = "none"
+
+[choices.cs]
+"vcs" = "none,git"
+"build" = "native"
+"package" = "builtin"
+
+[choices.go]
+"vcs" = "none,git"
+"build" = "native"
+"package" = "builtin"
+
+[choices.java]
+"vcs" = "none,git"
+"build" = "native"
+"package" = "builtin"
+
+[choices.python]
+"vcs" = "none,git"
+"build" = "native"
+"package" = "none,uv"
+
+[choices.javascript]
+"vcs" = "none,git"
+"build" = "native"
+"package" = "none,pnpm"
+
+[choices.typescript]
+"vcs" = "none,git"
+"build" = "native"
+"package" = "none,pnpm"
+
+# ---------------------------------------------------------------------------
+# Shared files
+# ---------------------------------------------------------------------------
+
+[templates.shared.git]
+".gitignore" = '''.cache/
+build/
+dist/
+node_modules/
+.venv/
+__pycache__/
+*.py[cod]
+*.class
+.gradle/
+target/
+vcpkg_installed/
+CMakeUserPresets.json
+zig-cache/
+.zig-cache/
+zig-out/
+*.exe
+*.dll
+*.so
+*.dylib
+bin/
+obj/
+compile_commands.json
+.projman-godot-*.sock
+'''
+".gitattributes" = '''* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+'''
+
+[templates.shared.c_family]
+"include/.gitkeep" = ""
+".clang-format" = '''BasedOnStyle: LLVM
+IndentWidth: 2
+TabWidth: 2
+UseTab: Never
+IndentCaseLabels: true
+AllowShortIfStatementsOnASingleLine: WithoutElse
+'''
+
+[templates.shared.cmake]
+"CMakeLists.txt" = '''cmake_minimum_required(VERSION 3.25)
+{{vcpkg_setup}}project({{name}} VERSION 1.0.0 LANGUAGES {{cmake_language}})
+
+add_executable(${PROJECT_NAME}
+  src/main.{{extension}}
+)
+
+target_include_directories(${PROJECT_NAME} PRIVATE include)
+target_compile_features(${PROJECT_NAME} PRIVATE {{compile_feature}})
+
+if(CMAKE_BUILD_TYPE STREQUAL "Sanitize")
+  if(CMAKE_{{compiler_id}}_COMPILER_ID MATCHES "GNU|Clang" AND NOT MSVC)
+    target_compile_options(${PROJECT_NAME} PRIVATE -Wall -Wextra -Wpedantic -O1 -g3 -fsanitize=address,undefined -fno-omit-frame-pointer)
+    target_link_options(${PROJECT_NAME} PRIVATE -fsanitize=address,undefined)
+  else()
+    message(FATAL_ERROR "The sanitize profile requires GCC or Clang with ASan and UBSan support")
+  endif()
+elseif(MSVC)
+  target_compile_options(${PROJECT_NAME} PRIVATE /W4 /permissive-)
+else()
+  target_compile_options(${PROJECT_NAME} PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+'''
+"CMakePresets.json" = '''{
+  "version": 6,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 25,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "debug",
+      "generator": "{{generator}}",
+      "binaryDir": "${sourceDir}/build/debug",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+      }
+    },
+    {
+      "name": "release",
+      "generator": "{{generator}}",
+      "binaryDir": "${sourceDir}/build/release",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+      }
+    },
+    {
+      "name": "sanitize",
+      "generator": "{{generator}}",
+      "binaryDir": "${sourceDir}/build/sanitize",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Sanitize",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+      }
+    }
+  ],
+  "buildPresets": [
+    { "name": "debug", "configurePreset": "debug" },
+    { "name": "release", "configurePreset": "release" },
+    { "name": "sanitize", "configurePreset": "sanitize" }
+  ]
+}
+'''
+
+[templates.shared.make]
+"Makefile" = '''TARGET    := {{name}}
+SRC_DIR   := src
+INC_DIR   := include
+BUILD_DIR := build
+
+{{compiler_variable}} ?= {{compiler}}
+{{standard_variable}} ?= -std={{standard}}
+WARN      ?= -Wall -Wextra -Wpedantic
+CPPFLAGS  += -I$(INC_DIR)
+LDFLAGS   ?=
+LDLIBS    ?=
+
+BUILD ?= debug
+
+ifeq ($(BUILD),debug)
+  {{flags_variable}} += $({{standard_variable}}) $(WARN) -O0 -g3 -DDEBUG
+else ifeq ($(BUILD),release)
+  {{flags_variable}} += $({{standard_variable}}) $(WARN) -O2 -DNDEBUG
+else ifeq ($(BUILD),sanitize)
+  {{flags_variable}} += $({{standard_variable}}) $(WARN) -O1 -g3 -fsanitize=address,undefined -fno-omit-frame-pointer
+  LDFLAGS += -fsanitize=address,undefined
+else
+  $(error BUILD must be 'debug', 'release' or 'sanitize')
+endif
+
+SRCS := $(wildcard $(SRC_DIR)/*.{{extension}})
+OBJS := $(patsubst $(SRC_DIR)/%.{{extension}},$(BUILD_DIR)/$(BUILD)/%.o,$(SRCS))
+DEPS := $(OBJS:.o=.d)
+BIN  := $(BUILD_DIR)/$(BUILD)/$(TARGET)
+
+.PHONY: all debug release sanitize run clean
+
+all: $(BIN)
+
+debug release sanitize:
+	$(MAKE) BUILD=$@
+
+$(BIN): $(OBJS)
+	$({{compiler_variable}}) $(OBJS) $(LDFLAGS) $(LDLIBS) -o $@
+
+$(BUILD_DIR)/$(BUILD)/%.o: $(SRC_DIR)/%.{{extension}}
+	@mkdir -p $(dir $@)
+	$({{compiler_variable}}) $(CPPFLAGS) $({{flags_variable}}) -MMD -MP -c $< -o $@
+
+run: $(BIN)
+	./$(BIN)
+
+clean:
+	rm -rf $(BUILD_DIR)
+
+-include $(DEPS)
+'''
+
+[templates.shared.vcpkg]
+"vcpkg.json" = '''{
+  "name": "{{package_name}}",
+  "version-string": "0.1.0",
+  "dependencies": []
+}
+'''
+
+# ---------------------------------------------------------------------------
+# C and C++
+# ---------------------------------------------------------------------------
+
+[templates.c]
+"src/main.c" = '''#include <stdio.h>
+
+int main(void) {
+  puts("Hello, {{name}}!");
+  return 0;
+}
+'''
+
+[templates.cpp]
+"src/main.cpp" = '''#include <iostream>
+
+int main() {
+  std::cout << "Hello, {{name}}!\n";
+  return 0;
+}
+'''
+
+# ---------------------------------------------------------------------------
+# Rust / Cargo
+# ---------------------------------------------------------------------------
+
+[templates.rust]
+"Cargo.toml" = '''[package]
+name = "{{package_name}}"
+version = "0.1.0"
+edition = "2024"
+'''
+"src/main.rs" = '''fn main() {
+    println!("Hello, {{name}}!");
+}
+'''
+
+# ---------------------------------------------------------------------------
+# Zig
+# ---------------------------------------------------------------------------
+
+[templates.zig]
+"main.zig" = '''const std = @import("std");
+
+pub fn main() void {
+    std.debug.print("Hello, {s}!\n", .{"{{name}}"});
+}
+'''
+
+# ---------------------------------------------------------------------------
+# Odin
+# ---------------------------------------------------------------------------
+
+[templates.odin]
+"main.odin" = '''package main
+
+import "core:fmt"
+
+main :: proc() {
+    fmt.println("Hello, {{name}}!")
+}
+'''
+
+# ---------------------------------------------------------------------------
+# C# / .NET / NuGet
+# ---------------------------------------------------------------------------
+
+[templates.cs]
+"Program.cs" = '''Console.WriteLine("Hello, {{name}}!");
+'''
+"{{name}}.csproj" = '''<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+</Project>
+'''
+
+# ---------------------------------------------------------------------------
+# Go / Go Modules
+# ---------------------------------------------------------------------------
+
+[templates.go]
+"go.mod" = '''module example.com/{{package_name}}
+
+go 1.23
+'''
+"main.go" = '''package main
+
+import "fmt"
+
+func main() {
+    fmt.Println("Hello, {{name}}!")
+}
+'''
+
+# ---------------------------------------------------------------------------
+# Java / Gradle
+# ---------------------------------------------------------------------------
+
+[templates.java]
+"settings.gradle" = '''rootProject.name = '{{name}}'
+'''
+"build.gradle" = '''plugins {
+    id 'application'
+}
+
+repositories {
+    mavenCentral()
+}
+
+application {
+    mainClass = 'Main'
+}
+
+def profile = providers.gradleProperty('profile').getOrElse('debug')
+tasks.withType(JavaCompile).configureEach {
+    options.debug = profile != 'release'
+}
+'''
+"src/main/java/Main.java" = '''public class Main {
+    public static void main(String[] args) {
+        System.out.println("Hello, {{name}}!");
+    }
+}
+'''
+
+# ---------------------------------------------------------------------------
+# Python / optional uv
+# ---------------------------------------------------------------------------
+
+[templates.python]
+"pyproject.toml" = '''[project]
+name = "{{package_name}}"
+version = "0.1.0"
+requires-python = ">=3.10"
+dependencies = []
+'''
+"src/main.py" = '''def main() -> None:
+    print("Hello, {{name}}!")
+
+
+if __name__ == "__main__":
+    main()
+'''
+
+[templates.python.package.uv]
+"pyproject.toml" = '''[project]
+name = "{{package_name}}"
+version = "0.1.0"
+requires-python = ">=3.10"
+dependencies = []
+
+[tool.uv]
+package = false
+'''
+
+# ---------------------------------------------------------------------------
+# JavaScript / optional pnpm
+# ---------------------------------------------------------------------------
+
+[templates.javascript]
+"package.json" = '''{
+  "name": "{{package_name}}",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node --check src/main.js",
+    "start": "node src/main.js"
+  }
+}
+'''
+"src/main.js" = '''console.log("Hello, {{name}}!");
+'''
+
+[templates.javascript.package.pnpm]
+"pnpm-workspace.yaml" = '''packages: []
+'''
+
+# ---------------------------------------------------------------------------
+# TypeScript / optional pnpm
+# ---------------------------------------------------------------------------
+
+[templates.typescript]
+"package.json" = '''{
+  "name": "{{package_name}}",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc --project tsconfig.json",
+    "build:release": "tsc --project tsconfig.json --removeComments",
+    "start": "node build/main.js"
+  }
+}
+'''
+"tsconfig.json" = '''{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "rootDir": "src",
+    "outDir": "build",
+    "strict": true,
+    "skipLibCheck": true
+  },
+  "include": ["src/**/*.ts"]
+}
+'''
+"src/main.ts" = '''console.log("Hello, {{name}}!");
+'''
+
+[templates.typescript.package.pnpm]
+"package.json" = '''{
+  "name": "{{package_name}}",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc --project tsconfig.json",
+    "build:release": "tsc --project tsconfig.json --removeComments",
+    "start": "node build/main.js"
+  },
+  "devDependencies": {
+    "typescript": "latest"
+  }
+}
+'''
+"pnpm-workspace.yaml" = '''packages: []
+'''
+
+# ---------------------------------------------------------------------------
+# Internal Unreal defaults; consumed by Projman, not :ProjmanNew.
+# ---------------------------------------------------------------------------
+
+[unreal]
+".clangd" = '''CompileFlags:
+  Add: [-std=c++20, -DUE_BUILD_DEVELOPMENT=1]
+  Remove: [-m64, -march=*]
+'''
