@@ -16,7 +16,7 @@ With lazy.nvim:
 
 ```lua
 {
-  "Hakynex/projman.nvim",
+  "Hakynox/projman.nvim",
   event = { "VimEnter", "BufReadPre" },
   opts = {},
 }
@@ -78,6 +78,8 @@ require("projman").setup({
 })
 ```
 
+Options left out, `nil` or `""` are unset. `setup()` raises an error that names any unknown option or any value of the wrong type, so typos do not go unnoticed.
+
 The bundled `templates.toml` is used unless `catalog` is set to another path. The catalog is intentionally limited to the TOML syntax used by the bundled file: tables, quoted keys/values and multiline literal strings. This keeps project generation dependency-free.
 
 ## Commands
@@ -93,13 +95,15 @@ The bundled `templates.toml` is used unless `catalog` is set to another path. Th
 | `:ProjmanOpen` | Open an Unreal, Unity or Godot project in its editor |
 | `:ProjmanRunFile` | Compile and run the current standalone C/C++ file |
 
+Only one command runs per project directory at a time: while a build, or a program started with `:ProjmanRun`, is running, the next command reports that the directory is busy.
+
 Build profiles are `debug`, `release` and `sanitize`. The default is `debug`. `sanitize` is limited to C/C++ CMake and Make projects whose build files explicitly enable both AddressSanitizer and UndefinedBehaviorSanitizer.
 
-Project detection starts at the current buffer's path and walks upward to the nearest supported project marker. Unnamed buffers use Neovim's current working directory. When marker types share a directory, engine projects take precedence over generated language/build files; this is important for Unity projects containing generated `.csproj` files.
+Project detection starts at the current buffer's path and walks upward to the nearest supported project marker. Unnamed buffers and special buffers (terminals, `oil://`, `fugitive://`, ...) use Neovim's current working directory. When marker types share a directory, engine projects take precedence over generated language/build files; this is important for Unity projects containing generated `.csproj` files.
 
 ## Project scaffolding
 
-`:ProjmanNew` presents the available choices and creates a new directory under `scaffold.directory` or Neovim's current working directory. A single available choice is selected automatically. Tab completion lists valid partial combinations.
+`:ProjmanNew` presents the available choices and creates a new directory under `scaffold.directory` or Neovim's current working directory. A single available choice is selected automatically. Tab completion lists the valid partial combinations that match what you typed.
 
 Examples:
 
@@ -118,7 +122,7 @@ Selection tokens follow this order: language, VCS, build system, CMake generator
 | --- | --- | --- |
 | C, C++ | CMake or Make | None or vcpkg (automatic integration with CMake; Make requires manual include/link flags) |
 | Rust | Cargo | Built-in (Cargo) |
-| Zig | Zig compiler | None |
+| Zig | Zig compiler (`build.zig` or `main.zig`) | None |
 | Odin | Odin compiler | None |
 | C# | .NET | Built-in (NuGet) |
 | Go | Go | Built-in (Go Modules) |
@@ -143,7 +147,7 @@ The bundled templates provide three profiles:
 | `release` | Release | `-O2 -DNDEBUG` |
 | `sanitize` | ASan + UBSan | ASan + UBSan |
 
-For generated CMake projects, Projman uses the matching named configure/build presets. For other CMake projects it configures into `build/<profile>`, exports `compile_commands.json`, and uses the configured generator if supplied. Run targets are resolved in both single- and multi-configuration build directories. Presets with inherited or environment-dependent `binaryDir` values need a matching build preset; set `cmake.executable` when the run target cannot be inferred or has a different path or name. `cmake.run_args` are passed to it.
+Projman uses matching configure/build presets when available, including presets in `CMakeUserPresets.json` and included preset files. Preset inheritance is resolved for the fields Projman needs. A configure preset without `binaryDir` uses CMake’s source-directory default. Without presets, Projman configures into `build/<profile>`, exports `compile_commands.json`, and uses the configured generator if supplied. Run targets are resolved in both single- and multi-configuration build directories. Set `cmake.executable` when the run target cannot be inferred or has a different path or name. `cmake.run_args` are passed to it.
 
 Make workflows pass `BUILD=<profile>`. `make.run_target` defaults to `run`. `:ProjmanRefresh` derives a best-effort `compile_commands.json` from `make -nB`; the parser supports conventional compiler commands and basic quoting, not arbitrary shell syntax. Recursive Make and makefile remaking can still execute commands during dry runs, so refresh only trusted Makefiles.
 
@@ -158,10 +162,10 @@ Make workflows pass `BUILD=<profile>`. `make.run_target` defaults to `run`. `:Pr
 | Python | `compileall` | `python3` or `uv run` |
 | JavaScript | pnpm build script when present, otherwise `node --check` | pnpm start script when present, otherwise Node.js |
 | TypeScript | pnpm build script or `tsc` | Build, then pnpm start script or Node.js |
-| Zig | `zig build-exe` | Build then run |
+| Zig | `zig build` when `build.zig` exists, otherwise `zig build-exe` | `zig build run` when `build.zig` exists, otherwise build then run |
 | Odin | `odin build` | Build then run |
 
-Native profiles map to the toolchain's ordinary debug/release options where available. Plain JavaScript has no separate compilation profile, so debug and release are identical. These workflows do not claim to provide ASan+UBSan.
+Native profiles map to the toolchain's ordinary debug/release options where available. Plain JavaScript has no separate compilation profile, so debug and release are identical. These workflows do not claim to provide ASan+UBSan. For Zig projects with `build.zig`, `:ProjmanRun` expects a `run` build step.
 
 Python projects with `uv.lock` or a `[tool.uv]` section use `uv`; JavaScript/TypeScript projects with a pnpm lockfile, workspace file or `packageManager` declaration use pnpm. Gradle projects use the local wrapper when present (it must be executable on Unix; Windows wrappers run through `cmd.exe`), otherwise the `gradle` executable on `PATH`. For .NET, one root-level solution is preferred for building; without a solution, exactly one root-level project is required. Running requires exactly one root-level project. Projects with multiple executable targets need an explicit project selection outside the current automatic workflow.
 
@@ -192,10 +196,10 @@ A Godot project is detected by `project.godot`. Set `engines.godot.executable` w
 
 Export preset names must match those in the project's `export_presets.cfg`. Optional `export_paths.debug` and `.release` values override the export destination.
 
-When `external_editor` is enabled, Projman starts a project-specific Neovim RPC socket when entering a Godot project. `:ProjmanInfo` displays its path. Use it in Godot's External Editor **Exec Flags**:
+When `external_editor` is enabled, Projman serves a Neovim RPC socket when you enter a Godot project. Its path depends only on the project root, so it is the same in every session and needs to be configured in Godot only once. If another Neovim already serves it, that instance is used; a stale socket left behind by a crash is replaced. `:ProjmanInfo` displays the path. Use it in Godot's External Editor **Exec Flags**:
 
 ```text
---server <socket-path> --remote-send "<C-\\><C-N>:e {file}<CR>:call cursor({line}+1,{col})<CR>"
+--server <socket-path> --remote-send "<C-\\><C-N>:e {file}<CR>:call cursor({line},{col})<CR>"
 ```
 
 Godot's editor must be running for its language server. For Godot .NET projects, configure the executable to the corresponding Godot .NET build.

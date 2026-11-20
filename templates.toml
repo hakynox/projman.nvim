@@ -119,6 +119,12 @@ AllowShortIfStatementsOnASingleLine: WithoutElse
 "CMakeLists.txt" = '''cmake_minimum_required(VERSION 3.25)
 {{vcpkg_setup}}project({{name}} VERSION 1.0.0 LANGUAGES {{cmake_language}})
 
+if(CMAKE_CONFIGURATION_TYPES AND CMAKE_{{compiler_id}}_COMPILER_ID MATCHES "GNU|Clang" AND NOT MSVC)
+  list(APPEND CMAKE_CONFIGURATION_TYPES Sanitize)
+  list(REMOVE_DUPLICATES CMAKE_CONFIGURATION_TYPES)
+  set(CMAKE_CONFIGURATION_TYPES "${CMAKE_CONFIGURATION_TYPES}" CACHE STRING "" FORCE)
+endif()
+
 add_executable(${PROJECT_NAME}
   src/main.{{extension}}
 )
@@ -126,17 +132,24 @@ add_executable(${PROJECT_NAME}
 target_include_directories(${PROJECT_NAME} PRIVATE include)
 target_compile_features(${PROJECT_NAME} PRIVATE {{compile_feature}})
 
-if(CMAKE_BUILD_TYPE STREQUAL "Sanitize")
-  if(CMAKE_{{compiler_id}}_COMPILER_ID MATCHES "GNU|Clang" AND NOT MSVC)
-    target_compile_options(${PROJECT_NAME} PRIVATE -Wall -Wextra -Wpedantic -O1 -g3 -fsanitize=address,undefined -fno-omit-frame-pointer)
-    target_link_options(${PROJECT_NAME} PRIVATE -fsanitize=address,undefined)
-  else()
+if(MSVC)
+  target_compile_options(${PROJECT_NAME} PRIVATE /W4 /permissive-)
+  if(CMAKE_BUILD_TYPE STREQUAL "Sanitize")
     message(FATAL_ERROR "The sanitize profile requires GCC or Clang with ASan and UBSan support")
   endif()
-elseif(MSVC)
-  target_compile_options(${PROJECT_NAME} PRIVATE /W4 /permissive-)
 else()
   target_compile_options(${PROJECT_NAME} PRIVATE -Wall -Wextra -Wpedantic)
+  if(CMAKE_BUILD_TYPE STREQUAL "Sanitize")
+    if(CMAKE_{{compiler_id}}_COMPILER_ID MATCHES "GNU|Clang")
+      target_compile_options(${PROJECT_NAME} PRIVATE -O1 -g3 -fsanitize=address,undefined -fno-omit-frame-pointer)
+      target_link_options(${PROJECT_NAME} PRIVATE -fsanitize=address,undefined)
+    else()
+      message(FATAL_ERROR "The sanitize profile requires GCC or Clang with ASan and UBSan support")
+    endif()
+  elseif(CMAKE_CONFIGURATION_TYPES AND CMAKE_{{compiler_id}}_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(${PROJECT_NAME} PRIVATE "$<$<CONFIG:Sanitize>:-O1;-g3;-fsanitize=address,undefined;-fno-omit-frame-pointer>")
+    target_link_options(${PROJECT_NAME} PRIVATE "$<$<CONFIG:Sanitize>:-fsanitize=address,undefined>")
+  endif()
 endif()
 '''
 "CMakePresets.json" = '''{
@@ -278,7 +291,7 @@ version = "0.1.0"
 edition = "2024"
 '''
 "src/main.rs" = '''fn main() {
-    println!("Hello, {{name}}!");
+  println!("Hello, {{name}}!");
 }
 '''
 
@@ -290,7 +303,7 @@ edition = "2024"
 "main.zig" = '''const std = @import("std");
 
 pub fn main() void {
-    std.debug.print("Hello, {s}!\n", .{"{{name}}"});
+  std.debug.print("Hello, {s}!\n", .{"{{name}}"});
 }
 '''
 
@@ -304,7 +317,7 @@ pub fn main() void {
 import "core:fmt"
 
 main :: proc() {
-    fmt.println("Hello, {{name}}!")
+  fmt.println("Hello, {{name}}!")
 }
 '''
 
@@ -339,7 +352,7 @@ go 1.23
 import "fmt"
 
 func main() {
-    fmt.Println("Hello, {{name}}!")
+  fmt.Println("Hello, {{name}}!")
 }
 '''
 
@@ -351,26 +364,26 @@ func main() {
 "settings.gradle" = '''rootProject.name = '{{name}}'
 '''
 "build.gradle" = '''plugins {
-    id 'application'
+  id 'application'
 }
 
 repositories {
-    mavenCentral()
+  mavenCentral()
 }
 
 application {
-    mainClass = 'Main'
+  mainClass = 'Main'
 }
 
 def profile = providers.gradleProperty('profile').getOrElse('debug')
 tasks.withType(JavaCompile).configureEach {
-    options.debug = profile != 'release'
+  options.debug = profile != 'release'
 }
 '''
 "src/main/java/Main.java" = '''public class Main {
-    public static void main(String[] args) {
-        System.out.println("Hello, {{name}}!");
-    }
+  public static void main(String[] args) {
+    System.out.println("Hello, {{name}}!");
+  }
 }
 '''
 
@@ -386,11 +399,11 @@ requires-python = ">=3.10"
 dependencies = []
 '''
 "src/main.py" = '''def main() -> None:
-    print("Hello, {{name}}!")
+  print("Hello, {{name}}!")
 
 
 if __name__ == "__main__":
-    main()
+  main()
 '''
 
 [templates.python.package.uv]
