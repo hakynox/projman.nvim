@@ -226,30 +226,89 @@ local native = {
 -- Every kind of project, with its build, run, refresh and open handlers as far as it has them.
 local handlers = vim.tbl_extend("error", native, engines.handlers, { cmake = cmake, make = make })
 
--- Run `action` ("build", "run", "refresh" or "open") on the project around the current buffer.
-function M.run(action, profile, config)
-  local ctx = project.context()
-  if not ctx then
-    return vim.notify("No supported project found around this buffer", WARN)
-  end
-
-  profile = profile ~= nil and profile ~= "" and profile or "debug"
+-- Why `profile` cannot be used for the project, or nil when it can.
+local function problem(ctx, profile)
   local handler = handlers[ctx.kind]
   if not vim.list_contains(PROFILES, profile) then
-    return vim.notify("Profile must be debug, release or sanitize", WARN)
+    return "Profile must be debug, release or sanitize"
   elseif profile == "sanitize" and not handler.sanitizer then
-    return vim.notify("ASan + UBSan is supported by C/C++ CMake and Make projects only", WARN)
+    return "ASan + UBSan is supported by C/C++ CMake and Make projects only"
   elseif profile == "sanitize" and not handler.sanitizer(ctx.root) then
-    local build_file = ctx.kind == "make" and "The Makefile" or "The CMake project"
-    return vim.notify(build_file .. " does not enable both AddressSanitizer and UBSan", WARN)
-  elseif not handler[action] then
+    return (ctx.kind == "make" and "The Makefile" or "The CMake project")
+      .. " does not enable both AddressSanitizer and UBSan"
+  end
+end
+
+local function available(ctx)
+  return vim.tbl_filter(function(profile)
+    return not problem(ctx, profile)
+  end, PROFILES)
+end
+
+local active = {} -- project root -> profile chosen in this session
+
+local function current(ctx)
+  return vim.list_contains(available(ctx), active[ctx.root]) and active[ctx.root] or "debug"
+end
+
+local function detect()
+  local ctx = project.context()
+  if not ctx then
+    vim.notify("No supported project found around this buffer", WARN)
+  end
+  return ctx
+end
+
+-- Profiles the detected project offers; `sanitize` only when its build files enable it.
+function M.profiles()
+  local ctx = project.context()
+  return ctx and available(ctx) or {}
+end
+
+-- The active profile of the detected project, or select `name` as the active one.
+function M.profile(name)
+  local ctx = detect()
+  if not ctx or name == nil or name == "" then
+    return ctx and current(ctx)
+  end
+  local reason = problem(ctx, name)
+  if reason then
+    return vim.notify(reason, WARN)
+  end
+  active[ctx.root] = name
+  vim.notify("Active profile: " .. name)
+  return name
+end
+
+-- The actions ("build", "run", "refresh", "open") the detected project supports.
+function M.actions()
+  local ctx = project.context()
+  local handler = ctx and handlers[ctx.kind] or {}
+  return vim.tbl_filter(function(action)
+    return handler[action] ~= nil
+  end, { "build", "run", "refresh", "open" })
+end
+
+-- Run `action` ("build", "run", "refresh" or "open") on the project around the current buffer. Without a
+-- `profile`, the project's active one is used.
+function M.run(action, profile, config)
+  local ctx = detect()
+  if not ctx then
+    return
+  end
+
+  profile = profile ~= nil and profile ~= "" and profile or current(ctx)
+  local reason = problem(ctx, profile)
+  if reason then
+    return vim.notify(reason, WARN)
+  elseif not handlers[ctx.kind][action] then
     return vim.notify(ctx.kind .. " projects do not support " .. action, WARN)
   end
 
   if action ~= "open" then
     vim.cmd("silent! wall")
   end
-  handler[action](ctx, profile, config)
+  handlers[ctx.kind][action](ctx, profile, config)
 end
 
 local COMPILERS = {
@@ -292,13 +351,14 @@ function M.run_file()
 end
 
 function M.info(config)
-  local ctx = project.context()
+  local ctx = detect()
   if not ctx then
-    return vim.notify("No supported project found around this buffer", WARN)
+    return
   end
   local lines = {
     "kind: " .. ctx.kind,
     "root: " .. ctx.root,
+    "profile: " .. current(ctx),
     "compile_commands.json: " .. (cmake.database(ctx.root) or "none"),
   }
   if ctx.kind == "godot" and config.engines.godot.external_editor then

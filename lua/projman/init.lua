@@ -47,12 +47,56 @@ local function matching(candidates, lead)
 end
 
 local function profiles(lead)
-  local ctx = project.context()
-  local all = { "debug", "release" }
-  if ctx and (ctx.kind == "cmake" or ctx.kind == "make") then
-    all[#all + 1] = "sanitize"
+  return matching(build.profiles(), lead)
+end
+
+local function select_profile()
+  local current = build.profile()
+  if not current then
+    return
   end
-  return matching(all, lead)
+  vim.ui.select(build.profiles(), {
+    prompt = "Profile",
+    format_item = function(profile)
+      return profile == current and profile .. " (active)" or profile
+    end,
+  }, function(profile)
+    if profile then
+      build.profile(profile)
+    end
+  end)
+end
+
+local LABELS = {
+  build = "Build",
+  run = "Run",
+  refresh = "Configure",
+  open = "Open editor",
+  profile = "Switch profile",
+  info = "Info",
+}
+
+-- Menu of everything the detected project can do, acting on its active profile.
+local function menu()
+  local ctx = project.context()
+  if not ctx then
+    return vim.notify("No supported project found around this buffer", vim.log.levels.WARN)
+  end
+  local items = vim.list_extend(build.actions(), { "profile", "info" })
+  vim.ui.select(items, {
+    prompt = ("%s project [%s]"):format(ctx.kind, build.profile()),
+    format_item = function(item)
+      return LABELS[item]
+    end,
+  }, function(item)
+    if item == "profile" then
+      select_profile()
+    elseif item == "info" then
+      build.info(config)
+    elseif item then
+      build.run(item, nil, config)
+    end
+  end)
 end
 
 local function command(name, callback, description, options)
@@ -76,6 +120,16 @@ function M.setup(options)
   action_command("ProjmanBuild", "build", "Build the detected project [debug|release|sanitize]")
   action_command("ProjmanRun", "run", "Run the detected project [debug|release|sanitize]")
   action_command("ProjmanRefresh", "refresh", "Refresh project metadata and compilation databases")
+
+  command("ProjmanProfile", function(args)
+    if args.args ~= "" then
+      build.profile(args.args)
+    else
+      select_profile()
+    end
+  end, "Select the active profile [debug|release|sanitize]", { nargs = "?", complete = profiles })
+
+  command("Projman", menu, "Open the project menu")
 
   command(
     "ProjmanNew",
@@ -142,6 +196,13 @@ end
 function M.refresh(profile)
   return build.run("refresh", profile, config)
 end
+
+-- The active profile of the detected project; with `name`, select it instead.
+function M.profile(name)
+  return build.profile(name)
+end
+
+M.menu = menu
 
 function M.open()
   return build.run("open", "debug", config)

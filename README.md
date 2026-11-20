@@ -90,14 +90,16 @@ The bundled `templates.toml` is used unless `catalog` is set to another path. Th
 | `:ProjmanBuild [profile]` | Build the detected project |
 | `:ProjmanRun [profile]` | Run the project or launch its engine editor |
 | `:ProjmanRefresh [profile]` | Configure/import the project or generate its compilation database |
+| `:Projman` | Open a menu of the actions the project supports: Build, Run, Configure, Open editor, Switch profile, Info |
+| `:ProjmanProfile [profile]` | Select the active profile through a selector, or set it directly |
 | `:ProjmanRoot` | Change Neovim's current directory to the project root |
-| `:ProjmanInfo` | Show project kind, root and compilation-database information |
+| `:ProjmanInfo` | Show project kind, root, active profile and compilation-database information |
 | `:ProjmanOpen` | Open an Unreal, Unity or Godot project in its editor |
 | `:ProjmanRunFile` | Compile and run the current standalone C/C++ file |
 
 Only one command runs per project directory at a time: while a build, or a program started with `:ProjmanRun`, is running, the next command reports that the directory is busy.
 
-Build profiles are `debug`, `release` and `sanitize`. The default is `debug`. `sanitize` is limited to C/C++ CMake and Make projects whose build files explicitly enable both AddressSanitizer and UndefinedBehaviorSanitizer.
+Build profiles are `debug`, `release` and `sanitize`. Every project starts with `debug`; the profile chosen with `:ProjmanProfile` or the menu is remembered per project until Neovim exits. Build, Run and Refresh use it unless the command is given a profile, which then applies to that call only. `sanitize` is limited to C/C++ CMake and Make projects whose build files explicitly enable both AddressSanitizer and UndefinedBehaviorSanitizer, and is offered only for those.
 
 Project detection starts at the current buffer's path and walks upward to the nearest supported project marker. Unnamed buffers and special buffers (terminals, `oil://`, `fugitive://`, ...) use Neovim's current working directory. When marker types share a directory, engine projects take precedence over generated language/build files; this is important for Unity projects containing generated `.csproj` files.
 
@@ -211,12 +213,19 @@ local projman = require("projman")
 
 projman.setup({})
 local context = projman.context() -- { kind = "cmake", root = "/path/to/project" }
-projman.build("debug")
-projman.run("release")
+projman.profile("release") -- select the active profile
+projman.profile() -- the active profile
+projman.build() -- uses the active profile
+projman.run("debug") -- an explicit profile applies to this call only
 projman.refresh()
+projman.menu()
 projman.open()
 projman.new("cpp-cmake-ninja")
 projman.info()
 ```
 
-`projman.find(path)` detects a project from a file or directory path. `projman.get_config()` returns a copy of the active configuration. The plugin does not set keymaps; users can map commands or Lua API calls however they prefer.
+`projman.find(path)` detects a project from a file or directory path. `projman.get_config()` returns a copy of the active configuration. The plugin does not set keymaps; users can map commands or Lua API calls however they prefer. For example, to open the menu with `<leader>m`:
+
+```lua
+vim.keymap.set("n", "<leader>m", "<cmd>Projman<cr>", { desc = "Projman menu" })
+```
