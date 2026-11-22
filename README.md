@@ -149,7 +149,7 @@ The bundled templates provide three profiles:
 | `release` | Release | `-O2 -DNDEBUG` |
 | `sanitize` | ASan + UBSan | ASan + UBSan |
 
-Projman uses matching configure/build presets when available, including presets in `CMakeUserPresets.json` and included preset files. Preset inheritance is resolved for the fields Projman needs. A configure preset without `binaryDir` uses CMake’s source-directory default. Without presets, Projman configures into `build/<profile>`, exports `compile_commands.json`, and uses the configured generator if supplied. Run targets are resolved in both single- and multi-configuration build directories. Set `cmake.executable` when the run target cannot be inferred or has a different path or name. `cmake.run_args` are passed to it.
+Projman uses matching configure/build presets when available, including presets in `CMakeUserPresets.json` and included preset files. Preset inheritance is resolved for the fields Projman needs. A configure preset without `binaryDir` uses CMake’s source-directory default. Without presets, Projman configures into `build/<profile>`, exports `compile_commands.json`, and uses the configured generator if supplied. `:ProjmanBuild` and `:ProjmanRun` configure first when the build directory has lost its `CMakeCache.txt` or, for Ninja and Makefile generators, its `compile_commands.json`; `:ProjmanRefresh` always reconfigures. Run targets are resolved in both single- and multi-configuration build directories. Set `cmake.executable` when the run target cannot be inferred or has a different path or name. `cmake.run_args` are passed to it.
 
 Make workflows pass `BUILD=<profile>`. `make.run_target` defaults to `run`. `:ProjmanRefresh` derives a best-effort `compile_commands.json` from `make -nB`; the parser supports conventional compiler commands and basic quoting, not arbitrary shell syntax. Recursive Make and makefile remaking can still execute commands during dry runs, so refresh only trusted Makefiles.
 
@@ -177,7 +177,7 @@ Python projects with `uv.lock` or a `[tool.uv]` section use `uv`; JavaScript/Typ
 
 Set `engines.unreal.root` or `$UE_ROOT` to the engine directory containing `Engine/Build/BatchFiles`. Projman detects one `.uproject` file at the project root, builds its `<Project>Editor` target by default, and supports a configured target override. Debug maps to UBT `Development`; release maps to `Shipping` for non-editor targets. The default `<Project>Editor` target remains `Development`, because Unreal Editor targets are not Shipping builds.
 
-`:ProjmanRefresh` invokes UBT's `GenerateClangDatabase` mode and writes `.clangd` and `.clang-format` only when those files do not already exist. The templates come from `templates.toml`. `:ProjmanRun` and `:ProjmanOpen` launch Unreal Editor with the project. ASan+UBSan is not provided for Unreal projects.
+`:ProjmanRefresh` first restores `.clangd` and `.clang-format` when they are missing (existing files are never overwritten), even if UBT later fails, then invokes UBT's `GenerateClangDatabase` mode. The templates come from `templates.toml`. `:ProjmanRun` and `:ProjmanOpen` launch Unreal Editor with the project. ASan+UBSan is not provided for Unreal projects.
 
 ### Unity
 

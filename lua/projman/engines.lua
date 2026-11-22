@@ -101,6 +101,8 @@ function unreal.build(ctx, profile, config)
 end
 
 function unreal.refresh(ctx, _, config)
+  -- Restore missing clang config files first, so a failing or missing UBT run cannot leave them absent.
+  write_clang_files(ctx.root, config.catalog)
   local setup = unreal_setup(ctx, config)
   if not setup then
     return
@@ -114,7 +116,6 @@ function unreal.refresh(ctx, _, config)
       if not stat then
         return vim.notify("UBT finished but wrote no compile_commands.json", WARN)
       end
-      write_clang_files(ctx.root, config.catalog)
       vim.notify(("%s (%.1f MB)"):format(database, stat.size / 1048576))
     end,
   })

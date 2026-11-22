@@ -181,6 +181,19 @@ local function executable(root, config, target)
   end
 end
 
+-- Whether `dir` still holds what a configure step generates: the cache and, for generators that can write
+-- one, the compilation database. Without either, building would fail or leave clangd without a database.
+local function configured(dir)
+  local function generator(pattern)
+    return project.grep(dir, "CMakeCache.txt", "^CMAKE_GENERATOR:INTERNAL=" .. pattern)
+  end
+  if not (dir and vim.uv.fs_stat(vim.fs.joinpath(dir, "CMakeCache.txt"))) then
+    return false
+  end
+  local exports = generator(".*Ninja") or generator(".*Makefiles")
+  return not exports or vim.uv.fs_stat(vim.fs.joinpath(dir, "compile_commands.json")) ~= nil
+end
+
 local function workflow(action)
   return function(ctx, profile, config)
     local target = plan(ctx.root, profile, config)
@@ -206,7 +219,7 @@ local function workflow(action)
       process.job(ctx.root, target.build, { title = title, on_ok = action == "run" and launch or nil })
     end
 
-    if target.dir and vim.uv.fs_stat(vim.fs.joinpath(target.dir, "CMakeCache.txt")) then
+    if configured(target.dir) then
       return build()
     end
     configure(build)
