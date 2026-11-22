@@ -2,24 +2,17 @@
 local M = {}
 local process = require("projman.process")
 local project = require("projman.project")
+local template = require("projman.template")
 
 local WARN, ERROR = vim.log.levels.WARN, vim.log.levels.ERROR
-local PROFILES = { "debug", "release", "sanitize" }
 local CONFIG = { debug = "Debug", release = "Release", sanitize = "Sanitize" }
-
-local function read_json(path)
-  local ok, data = pcall(function()
-    return vim.json.decode(table.concat(vim.fn.readfile(path), "\n"))
-  end)
-  return ok and type(data) == "table" and data or nil
-end
 
 -- The named presets of CMakePresets.json and CMakeUserPresets.json, includes first, as { configure = {}, build = {} }.
 local function load_presets(root)
   local all, seen = { configure = {}, build = {} }, {}
   local function load(path)
     path = vim.fs.normalize(path)
-    local data = not seen[path] and read_json(path)
+    local data = not seen[path] and project.json(path)
     seen[path] = true
     if not data then
       return
@@ -174,7 +167,8 @@ local function executable(root, config, target)
     return
   end
   local name = project.binary(root)
-  for _, path in ipairs({ vim.fs.joinpath(target.dir, target.configuration, name), vim.fs.joinpath(target.dir, name) }) do
+  local candidates = { vim.fs.joinpath(target.dir, target.configuration, name), vim.fs.joinpath(target.dir, name) }
+  for _, path in ipairs(candidates) do
     if vim.uv.fs_stat(path) then
       return path
     end
@@ -194,6 +188,25 @@ local function configured(dir)
   return not exports or vim.uv.fs_stat(vim.fs.joinpath(dir, "compile_commands.json")) ~= nil
 end
 
+-- Point clangd at the build: <root>/compile_commands.json becomes a link to the database CMake exported
+-- (a copy where links are not allowed). Builds in the source directory already have it at the root.
+local function link_database(root, dir)
+  local source = dir and dir ~= root and vim.fs.joinpath(dir, "compile_commands.json")
+  if not (source and vim.uv.fs_stat(source)) then
+    return
+  end
+  local link = vim.fs.joinpath(root, "compile_commands.json")
+  local existing = vim.uv.fs_lstat(link)
+  if existing and existing.type ~= "link" then
+    return vim.notify(link .. " is not a link; remove it so Projman can point clangd at the build", WARN)
+  end
+  vim.uv.fs_unlink(link)
+  local target = vim.startswith(source, root .. "/") and source:sub(#root + 2) or source
+  if not vim.uv.fs_symlink(target, link) and not vim.uv.fs_copyfile(source, link) then
+    vim.notify("Cannot create " .. link, WARN)
+  end
+end
+
 local function workflow(action)
   return function(ctx, profile, config)
     local target = plan(ctx.root, profile, config)
@@ -201,7 +214,10 @@ local function workflow(action)
       process.job(ctx.root, target.configure, { title = "CMake configure (" .. profile .. ")", on_ok = on_ok })
     end
     if action == "refresh" then
-      return configure()
+      template.restore(ctx.root, config.catalog, "c_family")
+      return configure(function()
+        link_database(ctx.root, target.dir)
+      end)
     elseif not target.build then
       return vim.notify("CMake preset needs a matching build preset or a resolvable binaryDir", ERROR)
     end
@@ -215,6 +231,7 @@ local function workflow(action)
     end
 
     local function build()
+      link_database(ctx.root, target.dir)
       local title = "CMake build (" .. profile .. ")"
       process.job(ctx.root, target.build, { title = title, on_ok = action == "run" and launch or nil })
     end
@@ -236,10 +253,10 @@ end
 -- The compile_commands.json CMake or Make left in or below `root`, if any.
 function M.database(root)
   local dirs = { root, vim.fs.joinpath(root, "build") }
-  for _, profile in ipairs(PROFILES) do
+  for _, profile in ipairs(project.PROFILES) do
     dirs[#dirs + 1] = vim.fs.joinpath(root, "build", profile)
   end
-  for _, profile in ipairs(PROFILES) do
+  for _, profile in ipairs(project.PROFILES) do
     local preset = find_preset(root, profile)
     if preset and preset.dir then
       dirs[#dirs + 1] = preset.dir

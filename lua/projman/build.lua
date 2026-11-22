@@ -7,7 +7,7 @@ local make = require("projman.make")
 local engines = require("projman.engines")
 
 local WARN, ERROR = vim.log.levels.WARN, vim.log.levels.ERROR
-local PROFILES = { "debug", "release", "sanitize" }
+local PROFILES = project.PROFILES
 
 local function job(ctx, title, argv, opts)
   return process.job(ctx.root, argv, vim.tbl_extend("force", { title = title }, opts or {}))
@@ -31,10 +31,8 @@ local function uses_pnpm(root)
 end
 
 local function package_scripts(root)
-  local ok, data = pcall(function()
-    return vim.json.decode(table.concat(vim.fn.readfile(vim.fs.joinpath(root, "package.json")), "\n"))
-  end)
-  return ok and type(data) == "table" and type(data.scripts) == "table" and data.scripts or {}
+  local data = project.json(vim.fs.joinpath(root, "package.json"))
+  return data and type(data.scripts) == "table" and data.scripts or {}
 end
 
 -- The Node.js script to run, preferring pnpm's `name` script when the project defines one.

@@ -64,33 +64,6 @@ local function unreal_argv(unreal, profile, extra)
   return vim.list_extend(argv, extra or {})
 end
 
--- Write .clangd and .clang-format from the catalog unless the project has them.
-local function write_clang_files(root, catalog)
-  local data, err = template.load(catalog)
-  if not data then
-    return vim.notify(err or "Failed to load template catalog", WARN)
-  end
-  local clangd = vim.tbl_get(data, "unreal", ".clangd")
-  local format = vim.tbl_get(data, "templates", "shared", "c_family", ".clang-format")
-  if type(clangd) ~= "string" or type(format) ~= "string" then
-    return vim.notify("Template catalog needs Unreal .clangd and shared C-family .clang-format templates", WARN)
-  end
-
-  local files = {}
-  for path, content in pairs({ [".clangd"] = clangd, [".clang-format"] = format }) do
-    if not vim.uv.fs_lstat(vim.fs.joinpath(root, path)) then
-      files[path] = content
-    end
-  end
-  local written, write_err = template.write_files(files, root)
-  if not written then
-    return vim.notify(write_err or "Failed to write clang config files", WARN)
-  end
-  if #written > 0 then
-    vim.notify("Wrote " .. table.concat(written, " and "))
-  end
-end
-
 local unreal = {}
 
 function unreal.build(ctx, profile, config)
@@ -102,7 +75,7 @@ end
 
 function unreal.refresh(ctx, _, config)
   -- Restore missing clang config files first, so a failing or missing UBT run cannot leave them absent.
-  write_clang_files(ctx.root, config.catalog)
+  template.restore(ctx.root, config.catalog, "unreal")
   local setup = unreal_setup(ctx, config)
   if not setup then
     return

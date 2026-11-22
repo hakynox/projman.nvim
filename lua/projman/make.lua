@@ -2,6 +2,7 @@
 local M = {}
 local process = require("projman.process")
 local project = require("projman.project")
+local template = require("projman.template")
 
 local COMPILERS = { "gcc", "g++", "cc", "c++", "clang", "clang++", "clang-cl", "nvcc" }
 local SOURCES = { "c", "cc", "cpp", "cxx", "c++", "m", "mm", "cu" }
@@ -160,6 +161,8 @@ function M.refresh(ctx, profile, config)
       if #result == 0 then
         return vim.notify("`make -nB` listed no compiler commands", vim.log.levels.WARN)
       end
+      -- A Makefile can belong to any language; compiler commands show that this is a C-family project.
+      template.restore(ctx.root, config.catalog, "c_family")
 
       -- Write beside the target and rename, so clangd never reads a half-written file.
       local path = vim.fs.joinpath(ctx.root, "compile_commands.json")

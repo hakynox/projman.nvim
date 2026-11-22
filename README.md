@@ -80,7 +80,7 @@ require("projman").setup({
 
 Options left out, `nil` or `""` are unset. `setup()` raises an error that names any unknown option or any value of the wrong type, so typos do not go unnoticed.
 
-The bundled `templates.toml` is used unless `catalog` is set to another path. The catalog is intentionally limited to the TOML syntax used by the bundled file: tables, quoted keys/values and multiline literal strings. This keeps project generation dependency-free.
+The bundled `templates.toml` is used unless `catalog` is set to another path. The catalog's sample sources follow the style of each language's standard formatter, and its `.clang-format` matches the C/C++ samples. The catalog is intentionally limited to the TOML syntax used by the bundled file: tables, quoted keys/values and multiline literal strings. This keeps project generation dependency-free.
 
 ## Commands
 
@@ -89,7 +89,7 @@ The bundled `templates.toml` is used unless `catalog` is set to another path. Th
 | `:ProjmanNew [spec]` | Create a project from the template catalog |
 | `:ProjmanBuild [profile]` | Build the detected project |
 | `:ProjmanRun [profile]` | Run the project or launch its engine editor |
-| `:ProjmanRefresh [profile]` | Configure/import the project or generate its compilation database |
+| `:ProjmanRefresh [profile]` | Restore missing generated files, then configure/import the project or generate its compilation database |
 | `:Projman` | Open a menu of the actions the project supports: Build, Run, Configure, Open editor, Switch profile, Info |
 | `:ProjmanProfile [profile]` | Select the active profile through a selector, or set it directly |
 | `:ProjmanRoot` | Change Neovim's current directory to the project root |
@@ -149,9 +149,22 @@ The bundled templates provide three profiles:
 | `release` | Release | `-O2 -DNDEBUG` |
 | `sanitize` | ASan + UBSan | ASan + UBSan |
 
-Projman uses matching configure/build presets when available, including presets in `CMakeUserPresets.json` and included preset files. Preset inheritance is resolved for the fields Projman needs. A configure preset without `binaryDir` uses CMake’s source-directory default. Without presets, Projman configures into `build/<profile>`, exports `compile_commands.json`, and uses the configured generator if supplied. `:ProjmanBuild` and `:ProjmanRun` configure first when the build directory has lost its `CMakeCache.txt` or, for Ninja and Makefile generators, its `compile_commands.json`; `:ProjmanRefresh` always reconfigures. Run targets are resolved in both single- and multi-configuration build directories. Set `cmake.executable` when the run target cannot be inferred or has a different path or name. `cmake.run_args` are passed to it.
+Projman uses matching configure/build presets when available, including presets in `CMakeUserPresets.json` and included preset files. Preset inheritance is resolved for the fields Projman needs. A configure preset without `binaryDir` uses CMake’s source-directory default. Without presets, Projman configures into `build/<profile>`, exports `compile_commands.json`, and uses the configured generator if supplied. `:ProjmanBuild` and `:ProjmanRun` configure first when the build directory has lost its `CMakeCache.txt` or, for Ninja and Makefile generators, its `compile_commands.json`; `:ProjmanRefresh` always reconfigures. After configuring or building, `<root>/compile_commands.json` is a link to the database in the build directory (a copy where links are not allowed), because clangd only looks in the root and `build/`; the link follows the profile that was last configured or built. A real file at that path is left alone with a warning. Run targets are resolved in both single- and multi-configuration build directories. Set `cmake.executable` when the run target cannot be inferred or has a different path or name. `cmake.run_args` are passed to it.
 
 Make workflows pass `BUILD=<profile>`. `make.run_target` defaults to `run`. `:ProjmanRefresh` derives a best-effort `compile_commands.json` from `make -nB`; the parser supports conventional compiler commands and basic quoting, not arbitrary shell syntax. Recursive Make and makefile remaking can still execute commands during dry runs, so refresh only trusted Makefiles.
+
+### Generated files
+
+Everything Projman generates after project creation can be restored with `:ProjmanRefresh`:
+
+| File | Restored for | Behavior |
+| --- | --- | --- |
+| `.clang-format` | C/C++ (CMake; Make once its compiler commands are listed), Unreal | Written from `templates.toml` when missing; an existing file is never overwritten |
+| `.clangd` | Unreal | Same |
+| `compile_commands.json` | C/C++, Unreal | Regenerated on every refresh (for CMake, a link into the build directory) |
+| Build directory | C/C++ | Reconfigured by build/run when `CMakeCache.txt` is gone |
+
+Files you author after creation (`CMakeLists.txt`, `CMakePresets.json`, `Makefile`, sources) are never restored from the catalog, since that would overwrite your work.
 
 ### Native toolchains
 
@@ -177,7 +190,7 @@ Python projects with `uv.lock` or a `[tool.uv]` section use `uv`; JavaScript/Typ
 
 Set `engines.unreal.root` or `$UE_ROOT` to the engine directory containing `Engine/Build/BatchFiles`. Projman detects one `.uproject` file at the project root, builds its `<Project>Editor` target by default, and supports a configured target override. Debug maps to UBT `Development`; release maps to `Shipping` for non-editor targets. The default `<Project>Editor` target remains `Development`, because Unreal Editor targets are not Shipping builds.
 
-`:ProjmanRefresh` first restores `.clangd` and `.clang-format` when they are missing (existing files are never overwritten), even if UBT later fails, then invokes UBT's `GenerateClangDatabase` mode. The templates come from `templates.toml`. `:ProjmanRun` and `:ProjmanOpen` launch Unreal Editor with the project. ASan+UBSan is not provided for Unreal projects.
+`:ProjmanRefresh` first restores `.clangd` and `.clang-format` when they are missing (see Generated files), even if UBT later fails, then invokes UBT's `GenerateClangDatabase` mode. `:ProjmanRun` and `:ProjmanOpen` launch Unreal Editor with the project. ASan+UBSan is not provided for Unreal projects.
 
 ### Unity
 

@@ -4,6 +4,8 @@
 -- string (no escapes) or a '''multiline literal'''.
 local M = {}
 
+local WARN = vim.log.levels.WARN
+
 function M.default_path()
   return vim.api.nvim_get_runtime_file("templates.toml", false)[1]
 end
@@ -193,6 +195,41 @@ function M.write_files(files, dir, vars)
   return vim.tbl_map(function(file)
     return file.relative
   end, plan)
+end
+
+-- The files :ProjmanRefresh puts back when missing, per project family.
+local MANAGED = {
+  c_family = { ".clang-format" },
+  unreal = { ".clang-format", ".clangd" },
+}
+
+-- Write the managed files of `family` that `root` lacks. Existing files are never touched.
+function M.restore(root, catalog, family)
+  local data, err = M.load(catalog)
+  if not data then
+    return vim.notify(err, WARN)
+  end
+  local groups = {
+    [".clang-format"] = vim.tbl_get(data, "templates", "shared", "c_family"),
+    [".clangd"] = vim.tbl_get(data, "templates", "unreal"),
+  }
+
+  local files = {}
+  for _, name in ipairs(MANAGED[family]) do
+    local content = (groups[name] or {})[name]
+    if type(content) ~= "string" then
+      return vim.notify("Template catalog has no " .. name .. " template", WARN)
+    elseif not vim.uv.fs_lstat(vim.fs.joinpath(root, name)) then
+      files[name] = content
+    end
+  end
+
+  local written, write_err = M.write_files(files, root)
+  if not written then
+    return vim.notify(write_err, WARN)
+  elseif #written > 0 then
+    vim.notify("Restored " .. table.concat(written, " and "))
+  end
 end
 
 return M

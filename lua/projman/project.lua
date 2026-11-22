@@ -5,6 +5,16 @@ local function extension(name)
   return (name:match("%.([^.]+)$") or ""):lower()
 end
 
+M.PROFILES = { "debug", "release", "sanitize" }
+
+-- The decoded JSON object in `path`, or nil when it is missing or invalid.
+function M.json(path)
+  local ok, data = pcall(function()
+    return vim.json.decode(table.concat(vim.fn.readfile(path), "\n"))
+  end)
+  return ok and type(data) == "table" and data or nil
+end
+
 -- Entries of `dir` as { name = type }; unreadable or missing directories are empty.
 local function list(dir)
   local entries, handle = {}, vim.uv.fs_scandir(dir)

@@ -4,7 +4,10 @@
 # comma-separated IDs; a single choice is selected automatically.
 # [templates.<language>] contains language files. Shared and option-specific
 # tables are merged by projman.scaffold, with later files replacing earlier ones.
-# Template bodies use literal strings so source code is copied verbatim.
+# Template bodies use literal strings so source code is copied verbatim, and are written in the style of each
+# language's standard formatter so the first format-on-save changes nothing.
+#
+# :ProjmanRefresh restores .clang-format (C/C++, Unreal) and .clangd (Unreal) from here when they are missing.
 
 # ---------------------------------------------------------------------------
 # Project choices
@@ -94,7 +97,6 @@ zig-out/
 bin/
 obj/
 compile_commands.json
-.projman-godot-*.sock
 '''
 ".gitattributes" = '''* text=auto eol=lf
 *.png binary
@@ -336,18 +338,20 @@ clean:
 [templates.c]
 "src/main.c" = '''#include <stdio.h>
 
-int main(void) {
-  puts("Hello, {{name}}!");
-  return 0;
+int main(void)
+{
+    puts("Hello, {{name}}!");
+    return 0;
 }
 '''
 
 [templates.cpp]
 "src/main.cpp" = '''#include <iostream>
 
-int main() {
-  std::cout << "Hello, {{name}}!\n";
-  return 0;
+int main()
+{
+    std::cout << "Hello, {{name}}!\n";
+    return 0;
 }
 '''
 
@@ -362,7 +366,7 @@ version = "0.1.0"
 edition = "2024"
 '''
 "src/main.rs" = '''fn main() {
-  println!("Hello, {{name}}!");
+    println!("Hello, {{name}}!");
 }
 '''
 
@@ -374,7 +378,7 @@ edition = "2024"
 "main.zig" = '''const std = @import("std");
 
 pub fn main() void {
-  std.debug.print("Hello, {s}!\n", .{"{{name}}"});
+    std.debug.print("Hello, {s}!\n", .{"{{name}}"});
 }
 '''
 
@@ -388,7 +392,7 @@ pub fn main() void {
 import "core:fmt"
 
 main :: proc() {
-  fmt.println("Hello, {{name}}!")
+	fmt.println("Hello, {{name}}!")
 }
 '''
 
@@ -423,7 +427,7 @@ go 1.23
 import "fmt"
 
 func main() {
-  fmt.Println("Hello, {{name}}!")
+	fmt.Println("Hello, {{name}}!")
 }
 '''
 
@@ -470,7 +474,7 @@ requires-python = ">=3.10"
 dependencies = []
 '''
 "src/main.py" = '''def main() -> None:
-  print("Hello, {{name}}!")
+    print("Hello, {{name}}!")
 
 
 if __name__ == "__main__":
@@ -553,7 +557,7 @@ package = false
     "start": "node build/main.js"
   },
   "devDependencies": {
-    "typescript": "latest"
+    "typescript": "^5.9.0"
   }
 }
 '''
@@ -561,10 +565,10 @@ package = false
 '''
 
 # ---------------------------------------------------------------------------
-# Internal Unreal defaults; consumed by Projman, not :ProjmanNew.
+# Unreal defaults; written by :ProjmanRefresh when missing, never by :ProjmanNew.
 # ---------------------------------------------------------------------------
 
-[unreal]
+[templates.unreal]
 ".clangd" = '''CompileFlags:
   Add: [-std=c++20, -DUE_BUILD_DEVELOPMENT=1]
   Remove: [-m64, -march=*]
